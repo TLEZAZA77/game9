@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="th" class="h-full bg-gray-950 text-slate-100 select-none">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>นักสืบไซเบอร์ ป.5 - AR Cyber Sleuth</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Google Fonts: Kanit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- MediaPipe Hands & Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <!-- Tailwind Customization -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            kanit: ['Kanit', 'sans-serif'],
+          },
+          colors: {
+            cyber: {
+              blue: '#00f0ff',
+              purple: '#8000ff',
+              pink: '#ff007f',
+              neon: '#39ff14',
+              dark: '#0a0d1a',
+              panel: 'rgba(15, 23, 42, 0.75)'
+            }
+          },
+          animation: {
+            'pulse-glow': 'pulseGlow 2s infinite ease-in-out',
+            'float': 'float 3s infinite ease-in-out',
+            'scanline': 'scanline 8s linear infinite',
+            'spin-slow': 'spin 12s linear infinite',
+          },
+          keyframes: {
+            pulseGlow: {
+              '0%, 100%': { boxShadow: '0 0 15px rgba(0, 240, 255, 0.4), inset 0 0 15px rgba(0, 240, 255, 0.2)' },
+              '50%': { boxShadow: '0 0 30px rgba(0, 240, 255, 0.8), inset 0 0 25px rgba(0, 240, 255, 0.4)' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0px)' },
+              '50%': { transform: 'translateY(-8px)' },
+            },
+            scanline: {
+              '0%': { transform: 'translateY(-100%)' },
+              '100%': { transform: 'translateY(1000%)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    * {
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      font-family: 'Kanit', sans-serif;
+      overflow: hidden;
+      background-color: #030712;
+    }
+
+    /* Video mirroring for realistic camera perspective */
+    .mirror-video {
+      transform: scaleX(-1);
+    }
+
+    /* Custom cyber scrollbars for modal boxes */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #00f0ff;
+      border-radius: 4px;
+    }
+
+    /* Glassmorphism card effects */
+    .glass-card {
+      background: rgba(10, 16, 31, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+    }
+
+    .glass-btn {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.15) 0%, rgba(128, 0, 255, 0.25) 100%);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(0, 240, 255, 0.4);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .glass-btn:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.35) 0%, rgba(128, 0, 255, 0.45) 100%);
+      border-color: #00f0ff;
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .glass-btn:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    /* Animated Cyber Scanning Line Overlay */
+    .cyber-grid {
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+    }
+  </style>
+</head>
+<body class="h-full w-full relative overflow-hidden font-kanit">
+
+  <!-- Full Screen AR Webcam Feed -->
+  <video id="webcam-feed" class="fixed inset-0 w-full h-full object-cover mirror-video z-0 bg-gray-950" autoplay playsinline muted></video>
+
+  <!-- AR Hand Overlay & Visual FX Canvas -->
+  <canvas id="ar-canvas" class="fixed inset-0 w-full h-full z-10 pointer-events-none"></canvas>
+  <canvas id="particle-canvas" class="fixed inset-0 w-full h-full z-20 pointer-events-none"></canvas>
+
+  <!-- Cyber Grid Background Overlay -->
+  <div class="fixed inset-0 z-10 pointer-events-none cyber-grid opacity-60"></div>
+  
+  <!-- AR Virtual Hand Cursor Indicator -->
+  <div id="ar-cursor" class="fixed z-50 pointer-events-none transform -translate-x-1/2 -translate-y-1/2 hidden transition-transform duration-75">
+    <div class="relative flex items-center justify-center w-12 h-12">
+      <!-- Outer Pulsing Ring -->
+      <div class="absolute inset-0 rounded-full border-2 border-cyan-400 animate-ping opacity-75"></div>
+      <!-- Progress Ring for Dwell Click -->
+      <svg class="absolute inset-0 w-full h-full transform -rotate-90">
+        <circle id="ar-cursor-progress" cx="24" cy="24" r="20" stroke="#ff007f" stroke-width="4" fill="transparent" stroke-dasharray="125.6" stroke-dashoffset="125.6" stroke-linecap="round"/>
+      </svg>
+      <!-- Center Point -->
+      <div class="w-4 h-4 rounded-full bg-cyan-400 border-2 border-white shadow-[0_0_12px_#00f0ff]"></div>
+    </div>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div id="toast-container" class="fixed top-6 right-6 z-50 flex flex-col gap-3 pointer-events-none"></div>
+
+  <!-- SCREEN 1: WELCOME SCREEN -->
+  <div id="screen-welcome" class="relative z-30 flex flex-col items-center justify-center min-h-screen p-4 sm:p-6 overflow-y-auto">
+    <div class="max-w-xl w-full glass-card rounded-3xl p-6 sm:p-8 text-center border border-cyan-500/40 relative shadow-2xl animate-pop-in">
+      
+      <!-- Top Cyber Tag -->
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-xs sm:text-sm font-medium mb-4">
+        <i class="fa-solid fa-shield-halved text-cyan-400"></i>
+        <span>วิทยาการคำนวณ ป.5/3 • บทเรียนการใช้งานอินเทอร์เน็ตอย่างปลอดภัย</span>
+      </div>
+
+      <!-- Main Game Title -->
+      <h1 class="text-3xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-200 to-purple-400 tracking-wide drop-shadow-[0_2px_10px_rgba(0,240,255,0.4)] mb-2">
+        นักสืบไซเบอร์ ป.5
+      </h1>
+      <p class="text-slate-300 text-sm sm:text-base mb-6">
+        AR Cyber Sleuth: ภารกิจสืบสวนภัยไซเบอร์ ไขคดีความปลอดภัยดิจิทัลด้วย AR
+      </p>
+
+      <!-- Camera Avatar Capture Section -->
+      <div class="flex flex-col items-center justify-center mb-6">
+        <div class="relative group">
+          <!-- Circular Frame -->
+          <div class="w-32 h-32 sm:w-40 sm:h-40 rounded-full border-4 border-cyan-400/80 overflow-hidden shadow-[0_0_25px_rgba(0,240,255,0.4)] relative bg-slate-900/80 flex items-center justify-center">
+            <video id="avatar-preview-video" class="w-full h-full object-cover mirror-video" autoplay playsinline muted></video>
+            <canvas id="avatar-canvas" class="w-full h-full object-cover hidden"></canvas>
+            <div id="avatar-placeholder" class="hidden flex-col items-center justify-center text-cyan-400">
+              <i class="fa-solid fa-user-ninja text-4xl mb-1"></i>
+              <span class="text-xs">ถ่ายรูปแล้ว</span>
+            </div>
+          </div>
+
+          <!-- Camera Badge -->
+          <div class="absolute -bottom-1 -right-1 bg-gradient-to-r from-cyan-500 to-purple-600 p-2.5 rounded-full text-white shadow-lg border-2 border-gray-900">
+            <i class="fa-solid fa-camera text-sm"></i>
+          </div>
+        </div>
+
+        <!-- Snapshot Action Button -->
+        <button id="btn-take-photo" onclick="takePlayerPhoto()" class="mt-3 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold glass-btn text-cyan-300 flex items-center gap-2">
+          <i class="fa-solid fa-camera-retro"></i>
+          <span>ถ่ายรูปสายสืบ</span>
+        </button>
+      </div>
+
+      <!-- Player Input Form -->
+      <div class="space-y-4 mb-6 text-left max-w-sm mx-auto">
+        <div>
+          <label class="block text-xs font-semibold text-cyan-300 mb-1 tracking-wider uppercase">
+            <i class="fa-solid fa-id-card text-xs mr-1"></i> ชื่อประจำตัวนักสืบ (Player Name)
+          </label>
+          <input type="text" id="player-name-input" maxlength="20" placeholder="กรอกชื่อนักสืบ..." 
+                 oninput="validateWelcomeForm()"
+                 class="w-full px-4 py-3 rounded-xl bg-slate-900/90 border border-cyan-500/40 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30 text-sm transition-all">
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex flex-col sm:flex-row gap-3 justify-center">
+        <button id="btn-start-game" disabled onclick="startGame()" 
+                class="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 text-white font-bold text-base sm:text-lg shadow-lg hover:shadow-[0_0_25px_rgba(0,240,255,0.6)] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2">
+          <i class="fa-solid fa-play"></i>
+          <span>เริ่มภารกิจสืบสวน</span>
+        </button>
+
+        <button onclick="toggleLeaderboardModal(true)" class="px-5 py-3.5 rounded-2xl glass-btn text-slate-200 font-semibold text-sm flex items-center justify-center gap-2">
+          <i class="fa-solid fa-trophy text-amber-400"></i>
+          <span>กระดานเกียรติยศ</span>
+        </button>
+      </div>
+
+      <!-- AR Tracking Mode Indicator -->
+      <div class="mt-6 pt-4 border-t border-cyan-500/20 flex items-center justify-between text-xs text-slate-400">
+        <span class="flex items-center gap-1.5">
+          <i class="fa-solid fa-hand text-cyan-400"></i>
+          รองรับการสั่งงานด้วยนิ้วมือ (AR Gesture)
+        </span>
+        <button onclick="toggleARMode()" id="ar-toggle-btn" class="text-cyan-400 hover:underline font-medium">
+          สลับโหมด: <span id="ar-status-text">กำลังโหลด AI...</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SCREEN 2: GAMEPLAY SCREEN -->
+  <div id="screen-game" class="relative z-30 hidden flex-col min-h-screen p-3 sm:p-6 justify-between">
+    
+    <!-- Top HUD Bar -->
+    <div class="w-full max-w-4xl mx-auto glass-card rounded-2xl p-3 sm:p-4 flex items-center justify-between border border-cyan-500/30 mb-4 shadow-xl">
+      <!-- Player Profile -->
+      <div class="flex items-center gap-3">
+        <div class="relative">
+          <img id="hud-player-photo" src="" alt="Player Avatar" class="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-cyan-400 object-cover shadow-[0_0_10px_#00f0ff]">
+          <span class="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
+          </span>
+        </div>
+        <div>
+          <h2 id="hud-player-name" class="font-bold text-sm sm:text-base text-cyan-300 truncate max-w-[120px] sm:max-w-[200px]">นักสืบ</h2>
+          <span class="text-xs text-slate-400 flex items-center gap-1">
+            <i class="fa-solid fa-shield text-cyan-400"></i>
+            ยศ: นักสืบไซเบอร์มือใหม่
+          </span>
+        </div>
+      </div>
+
+      <!-- Questions Progress Pill -->
+      <div class="flex flex-col items-center px-3 py-1 rounded-xl bg-slate-900/80 border border-cyan-500/30">
+        <span class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">ภารกิจที่</span>
+        <span id="hud-progress" class="text-sm sm:text-base font-extrabold text-cyan-300">1 / 10</span>
+      </div>
+
+      <!-- Score Banner -->
+      <div class="flex items-center gap-2 bg-gradient-to-r from-amber-500/20 to-yellow-500/10 border border-amber-500/40 px-3 sm:px-4 py-1.5 rounded-xl">
+        <i class="fa-solid fa-star text-amber-400 text-lg sm:text-xl animate-bounce"></i>
+        <div>
+          <div class="text-[10px] text-amber-300 uppercase font-semibold">คะแนน</div>
+          <div id="hud-score" class="text-base sm:text-xl font-black text-amber-300 tracking-wider">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Interactive Question Stage -->
+    <div class="w-full max-w-3xl mx-auto my-auto flex flex-col gap-4">
+      
+      <!-- Question Box -->
+      <div class="glass-card rounded-3xl p-5 sm:p-8 border border-cyan-500/40 text-center relative overflow-hidden shadow-2xl">
+        <!-- Accent Glow background -->
+        <div class="absolute -top-24 -left-24 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- Question Badge -->
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950 border border-cyan-500/30 text-cyan-400 text-xs font-semibold mb-3">
+          <i class="fa-solid fa-circle-question"></i>
+          <span id="question-category">การใช้อินเทอร์เน็ตอย่างปลอดภัย</span>
+        </div>
+
+        <!-- Question Prompt Text -->
+        <h3 id="question-text" class="text-lg sm:text-2xl font-bold text-slate-100 leading-relaxed mb-4">
+          กำลังโหลดคำถาม...
+        </h3>
+
+        <!-- Optional Scenario Badge or Graphic Container -->
+        <div id="question-scenario" class="hidden my-3 p-3 rounded-2xl bg-slate-900/80 border border-cyan-500/20 text-xs sm:text-sm text-cyan-200 flex items-center justify-center gap-2">
+          <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+          <span id="scenario-text">สถานการณ์ตัวอย่าง</span>
+        </div>
+      </div>
+
+      <!-- Multiple Choice Options -->
+      <div id="options-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+        <!-- Options rendered dynamically via JS -->
+      </div>
+
+      <!-- Feedback Banner (Appears after answer) -->
+      <div id="feedback-card" class="hidden glass-card rounded-2xl p-4 sm:p-5 border text-center animate-pop-in">
+        <div class="flex items-center justify-center gap-3 mb-2">
+          <div id="feedback-icon-bg" class="w-10 h-10 rounded-full flex items-center justify-center text-xl">
+            <i id="feedback-icon" class="fa-solid"></i>
+          </div>
+          <h4 id="feedback-title" class="text-lg sm:text-xl font-bold"></h4>
+        </div>
+        <p id="feedback-desc" class="text-xs sm:text-sm text-slate-300 mb-4 max-w-lg mx-auto"></p>
+        
+        <button id="btn-next-question" onclick="nextQuestion()" class="px-8 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-sm sm:text-base shadow-lg hover:shadow-[0_0_20px_rgba(0,240,255,0.5)] transition-all">
+          <span>ข้อถัดไป</span> <i class="fa-solid fa-arrow-right ml-2"></i>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Bottom AR Status & Controls -->
+    <div class="w-full max-w-3xl mx-auto flex items-center justify-between text-xs text-slate-400 p-2">
+      <div class="flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="ar-live-status">โหมดสั่งงาน: สัมผัส / เลื่อนเมาส์ / ชี้มือ AR</span>
+      </div>
+      <button onclick="quitGame()" class="text-rose-400 hover:text-rose-300 flex items-center gap-1 font-medium">
+        <i class="fa-solid fa-door-open"></i> ออกจากเกม
+      </button>
+    </div>
+
+  </div>
+
+  <!-- SCREEN 3: GAME OVER / VICTORY SCREEN -->
+  <div id="screen-result" class="relative z-30 hidden flex-col items-center justify-center min-h-screen p-4 sm:p-6 overflow-y-auto">
+    <div class="max-w-xl w-full glass-card rounded-3xl p-6 sm:p-8 text-center border border-amber-500/40 relative shadow-2xl animate-pop-in">
+      
+      <!-- Trophy Banner Icon -->
+      <div class="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 p-0.5 shadow-[0_0_30px_rgba(245,158,11,0.5)] mb-4 animate-float">
+        <div class="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-amber-400 text-3xl sm:text-4xl">
+          <i class="fa-solid fa-award"></i>
+        </div>
+      </div>
+
+      <h2 class="text-2xl sm:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-500 mb-1">
+        ภารกิจเสร็จสิ้น!
+      </h2>
+      <p id="result-rank-title" class="text-cyan-300 text-sm sm:text-base font-semibold mb-6">
+        คุณผ่านการประเมิน: ยอดนักสืบไซเบอร์ระดับเหรียญทอง
+      </p>
+
+      <!-- Results Scorecard Card -->
+      <div class="bg-slate-900/90 rounded-2xl p-4 border border-cyan-500/30 mb-6 grid grid-cols-2 gap-4">
+        <div class="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-800/50 border border-slate-700">
+          <span class="text-xs text-slate-400 mb-1">คะแนนรวมทั้งหมด</span>
+          <span id="result-final-score" class="text-2xl sm:text-3xl font-black text-amber-400">100</span>
+        </div>
+        <div class="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-800/50 border border-slate-700">
+          <span class="text-xs text-slate-400 mb-1">ตอบถูกต้อง</span>
+          <span id="result-correct-count" class="text-2xl sm:text-3xl font-black text-emerald-400">10/10</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex flex-col sm:flex-row gap-3 justify-center">
+        <button onclick="restartGame()" class="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-sm sm:text-base shadow-lg hover:shadow-[0_0_20px_rgba(0,240,255,0.5)] transition-all flex items-center justify-center gap-2">
+          <i class="fa-solid fa-rotate-right"></i>
+          <span>เล่นอีกครั้ง</span>
+        </button>
+
+        <button onclick="toggleLeaderboardModal(true)" class="px-6 py-3.5 rounded-2xl glass-btn text-amber-300 font-bold text-sm sm:text-base flex items-center justify-center gap-2">
+          <i class="fa-solid fa-trophy"></i>
+          <span>ดูอันดับอันดับรวม</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL: LEADERBOARD -->
+  <div id="modal-leaderboard" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="max-w-lg w-full glass-card rounded-3xl p-6 border border-cyan-500/40 shadow-2xl relative flex flex-col max-h-[85vh] animate-pop-in">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-4 border-b border-cyan-500/30 mb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+            <i class="fa-solid fa-trophy text-lg"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-lg text-slate-100">กระดานเกียรติยศ (Leaderboard)</h3>
+            <p class="text-xs text-slate-400">อันดับสายสืบไซเบอร์ยอดเยี่ยมประจำโรงเรียน</p>
+          </div>
+        </div>
+        <button onclick="toggleLeaderboardModal(false)" class="text-slate-400 hover:text-white p-2 rounded-xl">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <!-- Leaderboard List Container -->
+      <div id="leaderboard-list" class="flex-1 overflow-y-auto space-y-2.5 pr-1">
+        <div class="text-center py-8 text-slate-400 text-sm">
+          <i class="fa-solid fa-circle-notch fa-spin text-cyan-400 text-2xl mb-2"></i>
+          <p>กำลังโหลดข้อมูลอันดับ...</p>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="pt-4 mt-2 border-t border-cyan-500/20 flex justify-end">
+        <button onclick="toggleLeaderboardModal(false)" class="px-5 py-2.5 rounded-xl glass-btn text-xs font-semibold text-slate-300">
+          ปิดหน้าต่าง
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Global Firebase setup variables
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'cyber-sleuth-p5';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "AIzaSyDummyKeyForFallbackPurposeOnly",
+      authDomain: "cyber-sleuth.firebaseapp.com",
+      projectId: "cyber-sleuth",
+      storageBucket: "cyber-sleuth.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef123456"
+    };
+
+    let app, auth, db, currentUser = null;
+
+    try {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+
+      // Authenticate anonymously
+      signInAnonymously(auth).then((cred) => {
+        currentUser = cred.user;
+        console.log("Firebase Auth ready. UID:", currentUser.uid);
+      }).catch(err => {
+        console.warn("Firebase Auth fallback mode activated:", err.message);
+      });
+    } catch(e) {
+      console.warn("Firestore initialization skipped or mock mode active:", e);
+    }
+
+    // Export Firebase functions to window scope
+    window.saveScoreToFirestore = async function(playerName, score, photoDataUrl) {
+      if (!db || !currentUser) {
+        console.log("Saving locally (Offline mode)");
+        saveLocalScore(playerName, score);
+        return;
+      }
+      try {
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+        await addDoc(colRef, {
+          playerName: playerName || 'นักสืบไร้นาม',
+          score: Number(score) || 0,
+          photo: photoDataUrl || '',
+          timestamp: Date.now()
+        });
+        console.log("Score successfully uploaded to Firestore.");
+      } catch (err) {
+        console.error("Error saving score to Firestore:", err);
+        saveLocalScore(playerName, score);
+      }
+    };
+
+    window.fetchLeaderboardFromFirestore = async function() {
+      if (!db) return getLocalScores();
+      try {
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+        const snapshot = await getDocs(colRef);
+        const list = [];
+        snapshot.forEach(doc => {
+          list.push(doc.data());
+        });
+        // Sort descending in memory according to Rule 2
+        list.sort((a, b) => b.score - a.score);
+        return list;
+      } catch (err) {
+        console.warn("Firestore fetch error, fallback to local:", err);
+        return getLocalScores();
+      }
+    };
+
+    // Helper functions for fallback offline storage
+    function saveLocalScore(name, score) {
+      const local = getLocalScores();
+      local.push({ playerName: name, score: score, timestamp: Date.now() });
+      local.sort((a,b) => b.score - a.score);
+      try {
+        sessionStorage.setItem('cyber_sleuth_scores', JSON.stringify(local.slice(0, 20)));
+      } catch(e){}
+    }
+
+    function getLocalScores() {
+      try {
+        const data = sessionStorage.getItem('cyber_sleuth_scores');
+        return data ? JSON.parse(data) : [
+          { playerName: 'พี่แซม (ครูคอม)', score: 100, timestamp: Date.now() },
+          { playerName: 'น้องฟ้า ป.5/3', score: 90, timestamp: Date.now() },
+          { playerName: 'นักสืบเจมส์', score: 80, timestamp: Date.now() }
+        ];
+      } catch(e) { return []; }
+    }
+  </script>
+
+  <script>
+    /* ==========================================================================
+       1. WEB AUDIO SYNTHESIZER ENGINE (No external sound files required)
+       ========================================================================== */
+    class CyberSoundEngine {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+            this.ctx = new AudioContext();
+          }
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playHover() {
+        this.init();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.05);
+      }
+
+      playClick() {
+        this.init();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.08);
+      }
+
+      playCorrect() {
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, index) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + index * 0.08);
+          gain.gain.setValueAtTime(0.12, now + index * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.08 + 0.25);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + index * 0.08);
+          osc.stop(now + index * 0.08 + 0.25);
+        });
+      }
+
+      playWrong() {
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.linearRampToValueAtTime(110, now + 0.25);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      }
+
+      playShutter() {
+        this.init();
+        if (!this.ctx) return;
+        const bufferSize = this.ctx.sampleRate * 0.1;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+        noise.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start();
+      }
+    }
+
+    const soundEngine = new CyberSoundEngine();
+
+    /* ==========================================================================
+       2. COMPUTING SCIENCE GRADE 5 QUESTION BANK (วิทยาการคำนวณ ป.5/3)
+       ========================================================================== */
+    const QUESTION_BANK = [
+      {
+        id: 1,
+        category: "การตั้งรหัสผ่านที่ปลอดภัย",
+        scenario: "สถานการณ์: คุณกำลังสมัครบัญชีผู้ใช้ใหม่สำหรับเรียนออนไลน์",
+        question: "ข้อใดคือการตั้งรหัสผ่าน (Password) ที่ปลอดภัยที่สุดในการป้องกันแฮกเกอร์?",
+        options: [
+          { text: "12345678", correct: false, reason: "รหัสผ่านนี้เดาง่ายมากและติดอันดับโดนแฮกบ่อยที่สุด" },
+          { text: "P@ssw0rd#9z!", correct: true, reason: "ถูกต้อง! ปลอดภัยเพราะผสมตัวอักษรเล็ก-ใหญ่ ตัวเลข และสัญลักษณ์" },
+          { text: "วันเดือนปีเกิดของตนเอง", correct: false, reason: "ข้อมูลส่วนตัวเช่นวันเกิด สามารถสืบหาได้ง่ายมาก" },
+          { text: "ชื่อเล่นตนเองตามด้วย 007", correct: false, reason: "สั้นเกินไปและเดาโครงสร้างคาดเดาได้ง่าย" }
+        ]
+      },
+      {
+        id: 2,
+        category: "การป้องกันการล่อลวง (Phishing)",
+        scenario: "สถานการณ์: มีข้อความเด้งเตือนว่า 'คุณคือผู้โชคดีได้รับ iPad ฟรี! คลิกกรอกเลขบัตรประชาชน'",
+        question: "เมื่อเจอลิงก์น่าสงสัยและอ้างว่าแจกของฟรี นักสืบไซเบอร์ควรทำอย่างไร?",
+        options: [
+          { text: "รีบกรอกข้อมูลทันทีก่อนหมดเวลา", correct: false, reason: "อย่าหลงเชื่อ! นี่คือกลอุบาย Phishing เพื่อขโมยข้อมูล" },
+          { text: "ส่งต่อลิงก์ให้เพื่อนทุกคนในกลุ่ม", correct: false, reason: "การส่งต่อจะทำให้เพื่อนๆ เสี่ยงโดนหลอกลวงไปด้วย" },
+          { text: "ไม่กดลิงก์ ไม่กรอกข้อมูล และแจ้งผู้ปกครอง/ครู", correct: true, reason: "ถูกต้อง! ปฏิเสธการให้ข้อมูลส่วนตัว และแจ้งผู้ใหญ่ทันที" },
+          { text: "โอนเงินค่าธรรมเนียมส่งของไปก่อน", correct: false, reason: "เป็นการหลอกลวงให้เสียทรัพย์สินแน่นอน" }
+        ]
+      },
+      {
+        id: 3,
+        category: "การกลั่นแกล้งบนไซเบอร์ (Cyberbullying)",
+        scenario: "สถานการณ์: เห็นคนนำรูปเพื่อนไปแอบแต่งเติมหน้าตาให้กลายเป็นตัวตลกแล้วโพสต์ล้อเลียน",
+        question: "พฤติกรรมในสถานการณ์นี้จัดเป็นเรื่องใด และควรปฏิบัติต่างอย่างไร?",
+        options: [
+          { text: "กดไลก์และคอมเมนต์ตลกตามเพื่อน", correct: false, reason: "การร่วมล้อเลียนเป็นการสนับสนุนการ Cyberbullying" },
+          { text: "เป็นการ Cyberbullying ควรแจ้งเตือนหรือกดรายงาน (Report)", correct: true, reason: "ถูกต้อง! การแกล้งคนอื่นออนไลน์เป็น Cyberbullying ที่สร้างบาดแผลทางใจ" },
+          { text: "เซฟรูปเก็บไว้ส่งต่อให้คนอื่นดู", correct: false, reason: "เป็นการแพร่กระจายสื่อล้อเลียนต่อ ทำร้ายเพื่อนมากขึ้น" },
+          { text: "เป็นเรื่องตลกขบขันธรรมดาไม่ต้องใส่ใจ", correct: false, reason: "ความทุกข์ของผู้อื่นไม่ใช่เรื่องตลก" }
+        ]
+      },
+      {
+        id: 4,
+        category: "การปกป้องข้อมูลส่วนตัว (Personal Data)",
+        scenario: "สถานการณ์: เพื่อนในเกมออนไลน์ที่ไม่เคยเห็นหน้า ขอที่อยู่บ้านและเบอร์โทรศัพท์เพื่อส่งของขวัญมาให้",
+        question: "ข้อใดเป็นข้อมูลส่วนตัวที่ไม่ควรเปิดเผยต่อคนแปลกหน้าบนอินเทอร์เน็ต?",
+        options: [
+          { text: "วิชาเรียนที่ชอบ", correct: false, reason: "วิชาที่ชอบเป็นข้อมูลทั่วไป สามารถพูดคุยได้" },
+          { text: "ที่อยู่บ้าน เบอร์โทรศัพท์ และรหัสผ่าน", correct: true, reason: "ถูกต้อง! เป็นข้อมูลอันตรายที่อาจนำภัยมาสู่ตัวและครอบครัว" },
+          { text: "สีที่คุณชอบที่สุด", correct: false, reason: "เปิดเผยได้ ไม่ส่งผลต่อความปลอดภัย" },
+          { text: "ประเภทเพลงที่ชอบฟัง", correct: false, reason: "เป็นเพียงความชอบส่วนบุคคล พูดคุยแลกเปลี่ยนได้" }
+        ]
+      },
+      {
+        id: 5,
+        category: "ร่องรอยทางดิจิทัล (Digital Footprint)",
+        scenario: "สถานการณ์: นักเรียนโพสต์ข้อความต่อว่าผู้อื่นด้วยความโมโห แล้วลบออกใน 5 นาทีต่อมา",
+        question: "ข้อใดอธิบายเกี่ยวกับ Digital Footprint ได้ถูกต้องที่สุด?",
+        options: [
+          { text: "เมื่อกดลบแล้ว ข้อมูลจะหายไปทันทีไม่มีใครเห็นอีก", correct: false, reason: "ผู้อื่นอาจแคปหน้าจอไว้ได้ ข้อมูลดิจิทัลลบยากกว่าที่คิด" },
+          { text: "ร่องรอยกิจกรรมออนไลน์ที่ถูกบันทึกไว้และสืบค้นย้อนหลังได้", correct: true, reason: "ถูกต้อง! สิ่งที่เราโพสต์ ค้นหา หรือแชร์ จะคงอยู่เป็นร่องรอยดิจิทัล" },
+          { text: "รอยเท้าที่เดินเข้าห้องคอมพิวเตอร์", correct: false, reason: "ไม่ใช่รอยเท้าจริง แต่หมายถึงข้อมูลดิจิทัล" },
+          { text: "ความเร็วของอินเทอร์เน็ตบ้าน", correct: false, reason: "ไม่เกี่ยวกับร่องรอยการใช้งานดิจิทัล" }
+        ]
+      },
+      {
+        id: 6,
+        category: "การตรวจสอบข่าวปลอม (Fake News)",
+        scenario: "สถานการณ์: พบข่าวพาดหัวว่า 'กินน้ำมะนาวต้มสุกรักษาโรคร้ายหายทันทีใน 1 นาที!'",
+        question: "เมื่อพบข่าวที่ดูน่าตกใจและโอ้อวดเกินจริง ควรทำอย่างไรก่อนแชร์?",
+        options: [
+          { text: "รีบส่งต่อเข้ากลุ่มครอบครัวทันทีด้วยความหวังดี", correct: false, reason: "การส่งต่อข่าวปลอมสร้างความเข้าใจผิดและอันตรายต่อสุขภาพ" },
+          { text: "ตรวจสอบแหล่งที่มาจากหน่วยงานน่าเชื่อถือ เช่น กระทรวงสาธารณสุข", correct: true, reason: "ถูกต้อง! ต้องเช็กชัวร์ก่อนแชร์ จากหน่วยงานทางการเสมอ" },
+          { text: "เชื่อทันทีเพราะมีคนกดไลก์เยอะ", correct: false, reason: "จำนวนกดไลก์ไม่ได้ยืนยันความถูกต้องของข่าว" },
+          { text: "พิมพ์ด่าผู้โพสต์ด้วยคำหยาบคาย", correct: false, reason: "ควรรายงาน (Report) ข่าวปลอม ไม่ควรใช้คำหยาบ" }
+        ]
+      },
+      {
+        id: 7,
+        category: "ลิขสิทธิ์และจริยธรรม (Copyright)",
+        scenario: "สถานการณ์: กำลังทำรายงานส่งครู และต้องการนำรูปวาดจากอินเทอร์เน็ตมาประกอบ",
+        question: "การนำผลงานผู้อื่นจากอินเทอร์เน็ตมาใช้ในรายงาน ข้อใดทำได้ถูกต้องตามกฎหมาย?",
+        options: [
+          { text: "ก๊อปปี้มาใช้ได้เลยโดยไม่ต้องอ้างอิง", correct: false, reason: "เป็นการละเมิดลิขสิทธิ์ผลงานผู้อื่น" },
+          { text: "อ้างอิงแหล่งที่มา (Credit) และใช้เพื่อการศึกษาเท่านั้น", correct: true, reason: "ถูกต้อง! ให้เกียรติเจ้าของผลงานโดยการลงเครดิตและใช้เพื่อการศึกษา" },
+          { text: "นำรูปไปใส่ชื่อตนเองว่าเป็นคนวาด", correct: false, reason: "เป็นการแอบอ้างผลงานผู้อื่น ผิดกฎหมายอย่างร้ายแรง" },
+          { text: "นำรูปไปพิมพ์ขายให้เพื่อน", correct: false, reason: "เป็นการหารายได้จากผลงานผู้อื่นโดยไม่ได้รับอนุญาต" }
+        ]
+      },
+      {
+        id: 8,
+        category: "มารยาททางไซเบอร์ (Netiquette)",
+        scenario: "สถานการณ์: มีความเห็นไม่ตรงกับเพื่อนในกลุ่มสนทนาเรียนออนไลน์",
+        question: "มารยาทในการสื่อสารบนอินเทอร์เน็ต (Netiquette) ข้อใดเหมาะสมที่สุด?",
+        options: [
+          { text: "พิมพ์ตัวอักษรใหญ่ทั้งหมดเพื่อตะคอกใส่เพื่อน", correct: false, reason: "การพิมพ์ตัวใหญ่ทั้งหมดในโลกออนไลน์หมายถึงการตะโกนหรือด่าทอ" },
+          { text: "ใช้คำสุภาพ เคารพความเห็นต่าง ไม่ใช้ Hate Speech", correct: true, reason: "ถูกต้อง! การใช้คำสุภาพและรับฟังความเห็นเป็นมารยาทที่ดี" },
+          { text: "สร้างอวตารปลอมไปโพสต์ด่าเพื่อนลับหลัง", correct: false, reason: "การใช้นามแฝงก่อกวนเป็นพฤติกรรมที่ไม่เหมาะสม" },
+          { text: "สแปมสติ๊กเกอร์ 100 ภาพรบกวนการเรียน", correct: false, reason: "เป็นการรบกวนผู้อื่นในห้องเรียนออนไลน์" }
+        ]
+      },
+      {
+        id: 9,
+        category: "การจัดการเมื่อถูกแฮกบัญชี",
+        scenario: "สถานการณ์: รหัสผ่านของคุณเข้าใช้งานบัญชีไม่ได้ และเห็นโปรไฟล์โพสต์โฆษณาเว็บพนัน",
+        question: "หากสงสัยว่าบัญชีถูกแฮก (Hack) ควรดำเนินการอย่างไรเป็นอันดับแรก?",
+        options: [
+          { text: "ลบแอปพลิเคชันทิ้งแล้วเลิกใช้อินเทอร์เน็ต", correct: false, reason: "ไม่ได้แก้ปัญหา บัญชียังคงถูกนำไปใช้หลอกลวงคนอื่นอยู่" },
+          { text: "แจ้งผู้ปกครอง รีบลบหรือกู้คืนเปลี่ยนรหัสผ่าน และแจ้งแอดมินระบบ", correct: true, reason: "ถูกต้อง! ต้องรีบแจ้งผู้ใหญ่เพื่อตัดการเชื่อมต่อแฮกเกอร์ทันที" },
+          { text: "นิ่งเฉยไว้เพราะคิดว่าเดี๋ยวก็หายเอง", correct: false, reason: "แฮกเกอร์จะนำบัญชีไปหลอกเงินเพื่อนของคุณต่อ" },
+          { text: "โพสต์ด่าคนที่แฮกเกอร์ด้วยอารมณ์", correct: false, reason: "ไม่ช่วยแก้ปัญหาและอาจทำให้สถานการณ์แย่ลง" }
+        ]
+      },
+      {
+        id: 10,
+        category: "การป้องกันมัลแวร์และไวรัส",
+        scenario: "สถานการณ์: ต้องการดาวน์โหลดเกมคอมพิวเตอร์มาเล่นที่บ้าน",
+        question: "การติดตั้งโปรแกรมลงเครื่องคอมพิวเตอร์อย่างปลอดภัย ควรปฏิบัติอย่างไร?",
+        options: [
+          { text: "ดาวน์โหลดจากเว็บแจกฟรีสุ่มเสี่ยงที่ไม่รู้จัก", correct: false, reason: "เสี่ยงติดไวรัส มัลแวร์ หรือโปรแกรมเรียกค่าไถ่ (Ransomware)" },
+          { text: "ดาวน์โหลดจากเว็บไซต์ทางการหรือ Store ที่น่าเชื่อถือเท่านั้น", correct: true, reason: "ถูกต้อง! ช่วยให้มั่นใจได้ว่าไฟล์ได้รับการสแกนความปลอดภัยแล้ว" },
+          { text: "ปิดโปรแกรมสแกนไวรัสก่อนดาวน์โหลดเสมอ", correct: false, reason: "การปิดตัวสแกนไวรัสทำให้คอมพิวเตอร์ไร้การเกราะป้องกัน" },
+          { text: "คลิกป๊อปอัปโฆษณาแทรกที่เด้งขึ้นมาทั้งหมด", correct: false, reason: "ป๊อปอัปโฆษณามักพาไปสู่เว็บอันตราย" }
+        ]
+      }
+    ];
+
+    /* ==========================================================================
+       3. GAME STATE MANAGEMENT
+       ========================================================================== */
+    let gameState = {
+      playerName: '',
+      playerPhoto: '',
+      currentQuestionIndex: 0,
+      score: 0,
+      correctCount: 0,
+      questions: [],
+      answered: false,
+      arActive: false,
+      handPos: { x: -100, y: -100 },
+      dwellStartTime: null,
+      dwellTarget: null,
+      dwellThreshold: 1200 // 1.2s hover for dwell trigger
+    };
+
+    // DOM Elements References
+    const webcamVideo = document.getElementById('webcam-feed');
+    const avatarVideo = document.getElementById('avatar-preview-video');
+    const avatarCanvas = document.getElementById('avatar-canvas');
+    const avatarPlaceholder = document.getElementById('avatar-placeholder');
+    const playerNameInput = document.getElementById('player-name-input');
+    const btnStartGame = document.getElementById('btn-start-game');
+
+    // Initialize Webcam Feed
+    async function initWebcam() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+          audio: false
+        });
+        webcamVideo.srcObject = stream;
+        avatarVideo.srcObject = stream;
+      } catch (err) {
+        console.warn("Webcam access warning:", err);
+        showToast("ไม่สามารถเข้าถึงกล้องได้ ระบบจะใช้โหมดหน้าจอปกติ", "warning");
+      }
+    }
+
+    // Take Player Avatar Snapshot
+    window.takePlayerPhoto = function() {
+      soundEngine.playShutter();
+      const ctx = avatarCanvas.getContext('2d');
+      avatarCanvas.width = avatarVideo.videoWidth || 300;
+      avatarCanvas.height = avatarVideo.videoHeight || 300;
+
+      // Draw mirrored frame
+      ctx.translate(avatarCanvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(avatarVideo, 0, 0, avatarCanvas.width, avatarCanvas.height);
+
+      gameState.playerPhoto = avatarCanvas.toDataURL('image/png');
+
+      // Update Preview UI
+      avatarVideo.classList.add('hidden');
+      avatarCanvas.classList.remove('hidden');
+      avatarPlaceholder.classList.remove('hidden');
+
+      showToast("ถ่ายรูปสายสืบสำเร็จ!", "success");
+      validateWelcomeForm();
+    };
+
+    // Validate Welcome Form Input
+    window.validateWelcomeForm = function() {
+      const name = playerNameInput.value.trim();
+      const hasPhoto = !!gameState.playerPhoto;
+      
+      // Auto-fallback if name present
+      if (name.length >= 2) {
+        btnStartGame.disabled = false;
+      } else {
+        btnStartGame.disabled = true;
+      }
+    };
+
+    // Start New Game Session
+    window.startGame = function() {
+      soundEngine.playClick();
+      gameState.playerName = playerNameInput.value.trim() || 'นักสืบไซเบอร์';
+      if (!gameState.playerPhoto) {
+        // Fallback default avatar icon if photo skipped
+        gameState.playerPhoto = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%230f172a"/><circle cx="50" cy="40" r="20" fill="%2300f0ff"/><path d="M20 90 Q50 60 80 90" stroke="%2300f0ff" stroke-width="8" fill="none"/></svg>';
+      }
+
+      // Shuffle Questions for replayability
+      gameState.questions = [...QUESTION_BANK].sort(() => Math.random() - 0.5);
+      gameState.currentQuestionIndex = 0;
+      gameState.score = 0;
+      gameState.correctCount = 0;
+
+      // Update HUD Profile Info
+      document.getElementById('hud-player-photo').src = gameState.playerPhoto;
+      document.getElementById('hud-player-name').innerText = gameState.playerName;
+      document.getElementById('hud-score').innerText = '0';
+
+      // Switch Screens
+      document.getElementById('screen-welcome').classList.add('hidden');
+      document.getElementById('screen-game').classList.remove('hidden');
+      document.getElementById('screen-game').classList.add('flex');
+
+      renderQuestion();
+    };
+
+    /* ==========================================================================
+       4. QUESTION RENDER & ANSWER EVALUATION
+       ========================================================================== */
+    function renderQuestion() {
+      gameState.answered = false;
+      const q = gameState.questions[gameState.currentQuestionIndex];
+      
+      // Update HUD Progress
+      document.getElementById('hud-progress').innerText = `${gameState.currentQuestionIndex + 1} / ${gameState.questions.length}`;
+
+      // Update Question Card Text
+      document.getElementById('question-category').innerText = q.category;
+      document.getElementById('question-text').innerText = q.question;
+
+      const scenarioBox = document.getElementById('question-scenario');
+      if (q.scenario) {
+        document.getElementById('scenario-text').innerText = q.scenario;
+        scenarioBox.classList.remove('hidden');
+      } else {
+        scenarioBox.classList.add('hidden');
+      }
+
+      // Hide Feedback Card
+      document.getElementById('feedback-card').classList.add('hidden');
+
+      // Shuffle Options
+      const optionsContainer = document.getElementById('options-container');
+      optionsContainer.innerHTML = '';
+
+      const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
+
+      shuffledOptions.forEach((opt, idx) => {
+        const optionBtn = document.createElement('button');
+        optionBtn.className = `option-btn w-full p-4 sm:p-5 rounded-2xl glass-btn text-left flex items-start gap-3 text-sm sm:text-base text-slate-100 font-medium relative overflow-hidden group transition-all duration-200`;
+        optionBtn.dataset.correct = opt.correct;
+        optionBtn.dataset.reason = opt.reason;
+
+        // Option Prefix (A, B, C, D)
+        const prefix = String.fromCharCode(65 + idx);
+
+        optionBtn.innerHTML = `
+          <span class="w-8 h-8 rounded-xl bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 flex items-center justify-center font-bold text-sm shrink-0 group-hover:bg-cyan-500 group-hover:text-slate-950 transition-colors">
+            ${prefix}
+          </span>
+          <span class="flex-1 my-auto">${opt.text}</span>
+        `;
+
+        optionBtn.onclick = () => selectAnswer(optionBtn, opt.correct, opt.reason);
+        optionBtn.onmouseenter = () => soundEngine.playHover();
+
+        optionsContainer.appendChild(optionBtn);
+      });
+    }
+
+    window.selectAnswer = function(btnElement, isCorrect, reason) {
+      if (gameState.answered) return;
+      gameState.answered = true;
+
+      const allBtns = document.querySelectorAll('.option-btn');
+      allBtns.forEach(btn => {
+        btn.disabled = true;
+        if (btn.dataset.correct === "true") {
+          btn.classList.remove('glass-btn');
+          btn.classList.add('bg-emerald-950/90', 'border-emerald-400', 'text-emerald-200', 'shadow-[0_0_15px_rgba(52,211,153,0.4)]');
+        } else {
+          btn.classList.add('opacity-40');
+        }
+      });
+
+      const feedbackCard = document.getElementById('feedback-card');
+      const feedbackIconBg = document.getElementById('feedback-icon-bg');
+      const feedbackIcon = document.getElementById('feedback-icon');
+      const feedbackTitle = document.getElementById('feedback-title');
+      const feedbackDesc = document.getElementById('feedback-desc');
+
+      if (isCorrect) {
+        soundEngine.playCorrect();
+        triggerParticles(window.innerWidth / 2, window.innerHeight / 2);
+
+        gameState.score += 10;
+        gameState.correctCount += 1;
+        document.getElementById('hud-score').innerText = gameState.score;
+
+        btnElement.classList.remove('glass-btn');
+        btnElement.classList.add('bg-emerald-600/40', 'border-emerald-400');
+
+        feedbackCard.className = "glass-card rounded-2xl p-4 sm:p-5 border border-emerald-500/50 text-center animate-pop-in bg-emerald-950/40";
+        feedbackIconBg.className = "w-10 h-10 rounded-full flex items-center justify-center text-xl bg-emerald-500/20 text-emerald-400 border border-emerald-400";
+        feedbackIcon.className = "fa-solid fa-circle-check";
+        feedbackTitle.className = "text-lg sm:text-xl font-bold text-emerald-300";
+        feedbackTitle.innerText = "ถูกต้องยอดเยี่ยม! (+10 คะแนน)";
+      } else {
+        soundEngine.playWrong();
+
+        btnElement.classList.remove('glass-btn');
+        btnElement.classList.add('bg-rose-950/80', 'border-rose-500', 'text-rose-200');
+
+        feedbackCard.className = "glass-card rounded-2xl p-4 sm:p-5 border border-rose-500/50 text-center animate-pop-in bg-rose-950/40";
+        feedbackIconBg.className = "w-10 h-10 rounded-full flex items-center justify-center text-xl bg-rose-500/20 text-rose-400 border border-rose-400";
+        feedbackIcon.className = "fa-solid fa-circle-xmark";
+        feedbackTitle.className = "text-lg sm:text-xl font-bold text-rose-300";
+        feedbackTitle.innerText = "ยังไม่ถูกต้อง!";
+      }
+
+      feedbackDesc.innerText = reason;
+      feedbackCard.classList.remove('hidden');
+    };
+
+    window.nextQuestion = function() {
+      soundEngine.playClick();
+      gameState.currentQuestionIndex++;
+
+      if (gameState.currentQuestionIndex < gameState.questions.length) {
+        renderQuestion();
+      } else {
+        finishGame();
+      }
+    };
+
+    /* ==========================================================================
+       5. GAME COMPLETION & LEADERBOARD SYSTEM
+       ========================================================================== */
+    async function finishGame() {
+      document.getElementById('screen-game').classList.add('hidden');
+      document.getElementById('screen-game').classList.remove('flex');
+      document.getElementById('screen-result').classList.remove('hidden');
+      document.getElementById('screen-result').classList.add('flex');
+
+      document.getElementById('result-final-score').innerText = gameState.score;
+      document.getElementById('result-correct-count').innerText = `${gameState.correctCount}/${gameState.questions.length}`;
+
+      // Rank Title according to score
+      const rankTitle = document.getElementById('result-rank-title');
+      if (gameState.score >= 90) {
+        rankTitle.innerText = "ระดับ: 🏆 ยอดนักสืบไซเบอร์ระดับเหรียญทอง (ระดับดีเยี่ยม)";
+      } else if (gameState.score >= 70) {
+        rankTitle.innerText = "ระดับ: 🥇 นักสืบไซเบอร์ระดับเหรียญเงิน (ระดับดี)";
+      } else {
+        rankTitle.innerText = "ระดับ: 🥈 สายสืบไซเบอร์ฝึกหัด (ควรทบทวนบทเรียนเพิ่มเติม)";
+      }
+
+      // Trigger Celebration Fireworks
+      triggerFireworks();
+
+      // Save to Firebase Firestore / Local Storage
+      if (window.saveScoreToFirestore) {
+        await window.saveScoreToFirestore(gameState.playerName, gameState.score, gameState.playerPhoto);
+      }
+    }
+
+    window.restartGame = function() {
+      soundEngine.playClick();
+      document.getElementById('screen-result').classList.add('hidden');
+      document.getElementById('screen-result').classList.remove('flex');
+      startGame();
+    };
+
+    window.quitGame = function() {
+      soundEngine.playClick();
+      document.getElementById('screen-game').classList.add('hidden');
+      document.getElementById('screen-game').classList.remove('flex');
+      document.getElementById('screen-welcome').classList.remove('hidden');
+    };
+
+    window.toggleLeaderboardModal = async function(show) {
+      soundEngine.playClick();
+      const modal = document.getElementById('modal-leaderboard');
+      if (show) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        // Fetch rankings
+        const listContainer = document.getElementById('leaderboard-list');
+        listContainer.innerHTML = `
+          <div class="text-center py-8 text-slate-400 text-sm">
+            <i class="fa-solid fa-circle-notch fa-spin text-cyan-400 text-2xl mb-2"></i>
+            <p>กำลังโหลดอันดับสายสืบ...</p>
+          </div>
+        `;
+
+        if (window.fetchLeaderboardFromFirestore) {
+          const list = await window.fetchLeaderboardFromFirestore();
+          renderLeaderboardList(list);
+        }
+      } else {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    };
+
+    function renderLeaderboardList(list) {
+      const listContainer = document.getElementById('leaderboard-list');
+      if (!list || list.length === 0) {
+        listContainer.innerHTML = `<div class="text-center py-8 text-slate-400">ยังไม่มีข้อมูลอันดับ</div>`;
+        return;
+      }
+
+      listContainer.innerHTML = list.map((item, index) => {
+        let badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
+        let trophyIcon = `<span class="font-bold text-sm text-slate-400">#${index + 1}</span>`;
+
+        if (index === 0) {
+          badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.3)]';
+          trophyIcon = `<i class="fa-solid fa-trophy text-amber-400 text-base"></i>`;
+        } else if (index === 1) {
+          badgeColor = 'bg-slate-300/20 text-slate-200 border-slate-300/50';
+          trophyIcon = `<i class="fa-solid fa-medal text-slate-300 text-base"></i>`;
+        } else if (index === 2) {
+          badgeColor = 'bg-amber-700/20 text-amber-400 border-amber-700/50';
+          trophyIcon = `<i class="fa-solid fa-award text-amber-600 text-base"></i>`;
+        }
+
+        const avatar = item.photo || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 100 100"><rect width="100" height="100" fill="%230f172a"/><circle cx="50" cy="40" r="20" fill="%2300f0ff"/></svg>';
+
+        return `
+          <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-900/80 border ${badgeColor} transition-all">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0">
+                ${trophyIcon}
+              </div>
+              <img src="${avatar}" class="w-9 h-9 rounded-full object-cover border border-cyan-400/50">
+              <div class="truncate max-w-[140px] sm:max-w-[180px]">
+                <div class="font-bold text-sm text-slate-100 truncate">${escapeHtml(item.playerName)}</div>
+                <div class="text-[10px] text-slate-400">สายสืบไซเบอร์</div>
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-base font-black text-amber-400">${item.score} <span class="text-xs font-normal text-slate-400">คะแนน</span></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    /* ==========================================================================
+       6. CANVAS PARTICLE EFFECTS & FIREWORKS ENGINE
+       ========================================================================== */
+    const particleCanvas = document.getElementById('particle-canvas');
+    const pCtx = particleCanvas.getContext('2d');
+    let particles = [];
+
+    function resizeCanvas() {
+      particleCanvas.width = window.innerWidth;
+      particleCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function triggerParticles(x, y) {
+      const colors = ['#00f0ff', '#8000ff', '#ff007f', '#39ff14', '#ffd700'];
+      for (let i = 0; i < 40; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 8 + 2;
+        particles.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius: Math.random() * 4 + 2,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          alpha: 1,
+          decay: Math.random() * 0.02 + 0.015
+        });
+      }
+    }
+
+    function triggerFireworks() {
+      let count = 0;
+      const interval = setInterval(() => {
+        triggerParticles(
+          Math.random() * window.innerWidth,
+          Math.random() * (window.innerHeight * 0.6)
+        );
+        count++;
+        if (count > 8) clearInterval(interval);
+      }, 250);
+    }
+
+    function animateParticles() {
+      pCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= p.decay;
+
+        pCtx.save();
+        pCtx.globalAlpha = Math.max(0, p.alpha);
+        pCtx.fillStyle = p.color;
+        pCtx.shadowBlur = 10;
+        pCtx.shadowColor = p.color;
+        pCtx.beginPath();
+        pCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        pCtx.fill();
+        pCtx.restore();
+
+        if (p.alpha <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+
+    /* ==========================================================================
+       7. MEDIAPIPE HANDS AR TRACKING & DWELL CLICK SYSTEM
+       ========================================================================== */
+    const arCanvas = document.getElementById('ar-canvas');
+    const arCtx = arCanvas.getContext('2d');
+    const arCursor = document.getElementById('ar-cursor');
+    const arCursorProgress = document.getElementById('ar-cursor-progress');
+    const arStatusText = document.getElementById('ar-status-text');
+
+    function resizeARCanvas() {
+      arCanvas.width = window.innerWidth;
+      arCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeARCanvas);
+    resizeARCanvas();
+
+    // Toggle AR Mode
+    window.toggleARMode = function() {
+      gameState.arActive = !gameState.arActive;
+      arStatusText.innerText = gameState.arActive ? "เปิดใช้งาน AR สั่งด้วยมือ" : "ปิดใช้งาน AR (สัมผัส/เมาส์)";
+      if (!gameState.arActive) {
+        arCursor.classList.add('hidden');
+      }
+      showToast(gameState.arActive ? "เปิดโหมด AR นิ้วมือ" : "สลับเป็นโหมดสัมผัสปกติ", "info");
+    };
+
+    // Initialize MediaPipe Hands Tracking
+    function initMediaPipeHands() {
+      if (typeof Hands === 'undefined') {
+        arStatusText.innerText = "ใช้ระบบสัมผัสปกติ";
+        return;
+      }
+
+      const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6
+      });
+
+      hands.onResults(onHandResults);
+
+      const camera = new Camera(webcamVideo, {
+        onFrame: async () => {
+          if (gameState.arActive) {
+            await hands.send({ image: webcamVideo });
+          }
+        },
+        width: 640,
+        height: 480
+      });
+
+      camera.start().then(() => {
+        gameState.arActive = true;
+        arStatusText.innerText = "เปิดใช้งานเรียบร้อย";
+      }).catch(err => {
+        console.warn("Camera tracking failed, fallback to touch/mouse mode:", err);
+        arStatusText.innerText = "ใช้ระบบสัมผัสปกติ";
+      });
+    }
+
+    function onHandResults(results) {
+      arCtx.clearRect(0, 0, arCanvas.width, arCanvas.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+
+        // Index Finger Tip (Landmark 8)
+        const indexTip = landmarks[8];
+
+        // Convert normalized coordinates (mirrored X)
+        const screenX = (1 - indexTip.x) * window.innerWidth;
+        const screenY = indexTip.y * window.innerHeight;
+
+        gameState.handPos = { x: screenX, y: screenY };
+
+        // Position AR Reticle Cursor
+        arCursor.style.left = `${screenX}px`;
+        arCursor.style.top = `${screenY}px`;
+        arCursor.classList.remove('hidden');
+
+        // Draw Skeleton Trace lines on AR Canvas
+        drawHandOverlay(landmarks);
+
+        // Process Dwell Hover Triggering over UI Elements
+        processDwellClick(screenX, screenY);
+      } else {
+        arCursor.classList.add('hidden');
+        resetDwellState();
+      }
+    }
+
+    function drawHandOverlay(landmarks) {
+      arCtx.save();
+      arCtx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
+      arCtx.fillStyle = '#00f0ff';
+      arCtx.lineWidth = 3;
+
+      // Draw Joint points
+      landmarks.forEach((pt) => {
+        const x = (1 - pt.x) * arCanvas.width;
+        const y = pt.y * arCanvas.height;
+        arCtx.beginPath();
+        arCtx.arc(x, y, 4, 0, Math.PI * 2);
+        arCtx.fill();
+      });
+
+      arCtx.restore();
+    }
+
+    function processDwellClick(x, y) {
+      const hoveredElem = document.elementFromPoint(x, y);
+
+      if (hoveredElem && (hoveredElem.tagName === 'BUTTON' || hoveredElem.closest('button') || hoveredElem.tagName === 'INPUT')) {
+        const targetBtn = hoveredElem.tagName === 'BUTTON' ? hoveredElem : (hoveredElem.closest('button') || hoveredElem);
+
+        if (gameState.dwellTarget !== targetBtn) {
+          gameState.dwellTarget = targetBtn;
+          gameState.dwellStartTime = Date.now();
+          soundEngine.playHover();
+        } else {
+          const elapsed = Date.now() - gameState.dwellStartTime;
+          const progress = Math.min(1, elapsed / gameState.dwellThreshold);
+
+          // SVG Dashoffset Animation (Dasharray 125.6)
+          const offset = 125.6 * (1 - progress);
+          arCursorProgress.style.strokeDashoffset = offset;
+
+          if (progress >= 1) {
+            soundEngine.playClick();
+            targetBtn.click();
+            resetDwellState();
+          }
+        }
+      } else {
+        resetDwellState();
+      }
+    }
+
+    function resetDwellState() {
+      gameState.dwellTarget = null;
+      gameState.dwellStartTime = null;
+      arCursorProgress.style.strokeDashoffset = '125.6';
+    }
+
+    /* ==========================================================================
+       8. NOTIFICATION TOAST MESSAGES
+       ========================================================================== */
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+
+      let colors = 'bg-slate-900 border-cyan-500 text-cyan-300';
+      let icon = 'fa-circle-info';
+
+      if (type === 'success') {
+        colors = 'bg-slate-900 border-emerald-500 text-emerald-300';
+        icon = 'fa-circle-check';
+      } else if (type === 'warning') {
+        colors = 'bg-slate-900 border-amber-500 text-amber-300';
+        icon = 'fa-triangle-exclamation';
+      }
+
+      toast.className = `px-4 py-3 rounded-2xl glass-card border shadow-xl flex items-center gap-3 text-xs sm:text-sm font-medium animate-pop-in pointer-events-auto ${colors}`;
+      toast.innerHTML = `
+        <i class="fa-solid ${icon} text-base"></i>
+        <span>${message}</span>
+      `;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-10px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Window Onload Entry Point
+    window.onload = function() {
+      initWebcam();
+      initMediaPipeHands();
+    };
+  </script>
+</body>
+</html>
